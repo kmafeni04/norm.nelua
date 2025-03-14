@@ -1,0 +1,53 @@
+require "io"
+
+require "libs.sqlite"
+
+local DbType = @enum{
+  none = 0,
+  sqlite
+}
+
+local DB = @record{
+  type: DbType,
+  db: union{
+    lt: *sqlite3
+  }
+}
+
+function DB:query(query: string): (boolean, string)
+  switch self.type do
+    case DbType.none then
+      return false, "No valid db connection"
+    case DbType.sqlite then
+      local errMsg: cstring
+      local rc = sqlite3_exec(self.db.lt, query, nilptr, nilptr, &errMsg)
+      if rc ~= SQLITE_OK then
+        return false, errMsg
+      end
+      return true, ""
+  end
+    return false, "UNREACHEABLE"
+end
+
+local norm = @record{}
+local norm.connect = @record{}
+
+function norm.connect.sqlite(name: string): (boolean, DB, string)
+  local lite: *sqlite3
+  local rc = sqlite3_open(name, &lite)
+  if rc ~= SQLITE_OK then
+    return false, (@DB)(), sqlite3_errmsg(lite)
+  end
+  local db: DB
+  db.type = DbType.sqlite
+  db.db.lt = lite
+  return true, db, ""
+end
+
+function norm.connect.mysql(...)
+  error("UNIMPLEMENTED")
+end
+
+function norm.connect.postgres(...)
+  error("UNIMPLEMENTED")
+end
