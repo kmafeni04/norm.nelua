@@ -9,7 +9,7 @@ local DbType = @enum{
 
 local DB = @record{
   type: DbType,
-  db: union{
+  val: union{
     lt: *sqlite3
   }
 }
@@ -20,13 +20,75 @@ function DB:query(query: string): (boolean, string)
       return false, "No valid db connection"
     case DbType.sqlite then
       local errMsg: cstring
-      local rc = sqlite3_exec(self.db.lt, query, nilptr, nilptr, &errMsg)
+      local rc = sqlite3_exec(self.val.lt, query, nilptr, nilptr, &errMsg)
       if rc ~= SQLITE_OK then
         return false, errMsg
       end
       return true, ""
   end
-    return false, "UNREACHEABLE"
+  return false, "UNREACHEABLE"
+end
+
+local DB.Model = @record{
+  db: *DB,
+  tbl: string
+}
+
+function DB.Model:find(query: hashmap(string, string)): (boolean, hashmap(string, string), string)
+
+  local sql: stringbuilder
+  sql:write("SELECT * FROM")
+  sql:write((' "%s" '):format(self.tbl))
+  sql:write("WHERE")
+  for k, v in pairs(query) do
+    sql:write((' "%s" = "%s" '):format(k, v))
+  end
+  sql:write("limit 1")
+
+  local result: hashmap(string, string)
+
+  switch self.db.type do
+    case DbType.none then
+      return false, result, "No valid db connection"
+    case DbType.sqlite then
+      local function callback(data: pointer, argc: cint, argv: pointer(cstring), azColName: pointer(cstring)): cint
+        local rs: *cstring= (@*cstring)(data)
+        for i = 1, argc do
+          local x: cstring
+          if (@*[0]cstring)(argv)[i] then
+            x = (@*[0]cstring)(argv)[i]
+          else
+            x = ""
+          end
+          $rs = $rs .. ("%s = %s\n"):format((@*[0]cstring)(azColName)[i], x)
+        end
+        return 0 
+      end
+
+      local errMsg: cstring
+      local rs: cstring
+      local rc = sqlite3_exec(self.db.val.lt, sql:promote(), callback, &rs, &errMsg)
+      if rc ~= SQLITE_OK then
+        return false, result, errMsg
+      end
+      local rs = (@string)(rs)
+      for line in rs:gmatch("[^\n]*\n") do
+        local hash_matched, hash_seq = line:match("([^%s]+) = ([^%s]+)")
+        if hash_matched then
+          result[hash_seq[1]] = hash_seq[2]
+        end
+      end
+      return true, result, ""
+  end
+  return false, result, "UNREACHEABLE"
+end
+
+function DB:model(tbl: string): (boolean, DB.Model, string)
+  local model: DB.Model
+
+  model.db = self
+  model.tbl = tbl
+  return true, model, ""
 end
 
 local norm = @record{}
@@ -40,7 +102,7 @@ function norm.connect.sqlite(name: string): (boolean, DB, string)
   end
   local db: DB
   db.type = DbType.sqlite
-  db.db.lt = lite
+  db.val.lt = lite
   return true, db, ""
 end
 
@@ -51,3 +113,5 @@ end
 function norm.connect.postgres(...)
   error("UNIMPLEMENTED")
 end
+
+return norm

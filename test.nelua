@@ -1,0 +1,37 @@
+local norm = require "norm"
+
+local ok, db, err = norm.connect.sqlite(":memory:")
+
+assert(ok, err)
+
+local ok, err = db:query([[
+  CREATE TABLE users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    email TEXT NOT NULL UNIQUE,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+]])
+
+assert(ok, err)
+
+local ok, err = db:query([[
+INSERT INTO users (name, email) VALUES
+('Alice', 'alice@example.com'),
+('Bob', 'bob@example.com');
+]])
+
+assert(ok, err)
+
+local ok, Users, err = db:model("users")
+
+assert(ok, err)
+
+local query: hashmap(string, string)
+query["name"] = "Alice"
+
+local ok, user, err = Users:find(query)
+
+assert(ok, err)
+
+print(user["name"])
