@@ -34,15 +34,19 @@ local DB.Model = @record{
   tbl: string
 }
 
-function DB.Model:find(query: hashmap(string, string)): (boolean, hashmap(string, string), string)
+function DB.Model:find(query: overload(hashmap(string, string), string)): (boolean, hashmap(string, string), string)
 
   local sql: stringbuilder
   sql:write("SELECT * FROM")
   sql:write((' "%s" '):format(self.tbl))
   sql:write("WHERE")
-  for k, v in pairs(query) do
-    sql:write((' "%s" = "%s" '):format(k, v))
-  end
+  ## if query.type.is_string then
+    sql:write((' %s '):format(query))
+  ## else
+    for k, v in pairs(query) do
+      sql:write((' "%s" = "%s" '):format(k, v))
+    end
+  ## end
   sql:write("limit 1")
 
   local result: hashmap(string, string)
@@ -52,7 +56,7 @@ function DB.Model:find(query: hashmap(string, string)): (boolean, hashmap(string
       return false, result, "No valid db connection"
     case DbType.sqlite then
       local function callback(data: pointer, argc: cint, argv: pointer(cstring), azColName: pointer(cstring)): cint
-        local rs: *cstring= (@*cstring)(data)
+        local rs: *cstring = (@*cstring)(data)
         for i = 1, argc do
           local x: cstring
           if (@*[0]cstring)(argv)[i] then
@@ -77,6 +81,64 @@ function DB.Model:find(query: hashmap(string, string)): (boolean, hashmap(string
         if hash_matched then
           result[hash_seq[1]] = hash_seq[2]
         end
+      end
+      return true, result, ""
+  end
+  return false, result, "UNREACHEABLE"
+end
+
+function DB.Model:find_all(query: overload(hashmap(string, string), string, niltype)): (boolean, sequence(hashmap(string, string)), string)
+  local sql: stringbuilder
+  sql:write("SELECT * FROM")
+  sql:write((' "%s" '):format(self.tbl))
+  ## if not query.type.is_niltype then
+    sql:write("WHERE")
+    ## if query.type.is_string then
+      sql:write((' %s '):format(query))
+    ## else
+      for k, v in pairs(query) do
+        sql:write((' "%s" = "%s" '):format(k, v))
+      end
+    ## end
+  ## end
+
+
+  local result: sequence(hashmap(string, string))
+  switch self.db.type do
+    case DbType.none then
+      return false, result, "No valid db connection"
+    case DbType.sqlite then
+      local function callback(data: pointer, argc: cint, argv: pointer(cstring), azColName: pointer(cstring)): cint
+        local rs: *cstring = (@*cstring)(data)
+        for i = 1, argc do
+          local x: cstring
+          if (@*[0]cstring)(argv)[i] then
+            x = (@*[0]cstring)(argv)[i]
+          else
+            x = ""
+          end
+          $rs = $rs .. ("%s = %s\n"):format((@*[0]cstring)(azColName)[i], x)
+        end
+        $rs = $rs .. "|\n"
+        return 0
+      end
+
+      local errMsg: cstring
+      local rs: cstring
+      local rc = sqlite3_exec(self.db.val.lt, sql:promote(), callback, &rs, &errMsg)
+      if rc ~= SQLITE_OK then
+        return false, result, errMsg
+      end
+      local rs = (@string)(rs)
+      for irs in rs:gmatch("[^%|]*|") do
+        local iresult: hashmap(string, string)
+        for line in irs:gmatch("[^\n]*\n") do
+          local hash_matched, hash_seq = line:match("([^%s]+) = ([^%s]+)")
+          if hash_matched then
+            iresult[hash_seq[1]] = hash_seq[2]
+          end
+        end
+        result:push(iresult)
       end
       return true, result, ""
   end

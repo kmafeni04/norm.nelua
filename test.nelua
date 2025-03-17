@@ -9,6 +9,7 @@ local ok, err = db:query([[
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
     email TEXT NOT NULL UNIQUE,
+    fav_num INTEGER NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 ]])
@@ -16,9 +17,9 @@ local ok, err = db:query([[
 assert(ok, err)
 
 local ok, err = db:query([[
-INSERT INTO users (name, email) VALUES
-('Alice', 'alice@example.com'),
-('Bob', 'bob@example.com');
+INSERT INTO users (name, email, fav_num) VALUES
+('Alice', 'alice@example.com', 10),
+('Bob', 'bob@example.com', 10);
 ]])
 
 assert(ok, err)
@@ -35,3 +36,27 @@ local ok, user, err = Users:find(query)
 assert(ok, err)
 
 print(user["name"])
+
+local ok, user, err = Users:find("name = 'Bob'")
+
+assert(ok, err)
+
+print(user["name"])
+
+local query: hashmap(string, string)
+query["fav_num"] = "10"
+local ok, users, err = Users:find_all(query)
+
+assert(ok, err)
+
+for i, v in ipairs(users) do
+  print(v["name"])
+end
+
+local ok, users, err = Users:find_all("fav_num = '10'")
+
+assert(ok, err)
+
+for i, v in ipairs(users) do
+  print(v["name"])
+end
